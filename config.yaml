@@ -1,0 +1,24 @@
+seed: 67
+
+data:
+  root: "./data"
+  batch_size: 64
+  train_size: 50000
+  validation_size: 10000
+
+model:
+  latent_dim: 16
+
+training:
+  epochs: 50
+  learning_rate: 1e-3
+  beta_one: 0.999
+  beta_two: 0.9
+  batch_size: 64
+
+loss:
+  beta: 1.0
+
+scheduler:
+  step_size: 10
+  gamma: 0.5
