@@ -2,22 +2,23 @@ seed: 67
 
 data:
   root: "./data"
-  batch_size: 64
+  batch_size: 32
   train_size: 50000
   validation_size: 10000
 
 model:
-  latent_dim: 16
+  latent_dim: 8
 
 training:
   epochs: 50
-  learning_rate: 1e-3
+  learning_rate: 1e-4
   beta_one: 0.999
-  beta_two: 0.9
+  beta_two: 0.95
   batch_size: 64
+  weight_decay: 1e-5
 
 loss:
-  beta: 1.0
+  beta: 0.75
 
 scheduler:
   step_size: 10

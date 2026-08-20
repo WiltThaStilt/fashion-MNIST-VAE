@@ -16,15 +16,15 @@ class Encoder(nn.Module):
             nn.Conv2d(in_channels=self.channels, out_channels=32, kernel_size=4), # [(28 - 4) / 1] + 1 = 25 => 32 x 25 x 25
             nn.BatchNorm2d(32),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2), # [(25 - 4) / 2] + 1 = 11 => 64 x 11 x 11
-            nn.BatchNorm2d(64),
+            nn.Conv2d(in_channels=32, out_channels=16, kernel_size=4, stride=2), # [(25 - 4) / 2] + 1 = 11 => 64 x 11 x 11
+            nn.BatchNorm2d(16),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
             nn.Flatten()
         )
 
         # Parallel Mean and LogVar Layer
-        self.mu = nn.Linear(64 * 11 * 11, self.output_dim)
-        self.logvar = nn.Linear(64 * 11 * 11, self.output_dim)
+        self.mu = nn.Linear(16 * 11 * 11, self.output_dim)
+        self.logvar = nn.Linear(16 * 11 * 11, self.output_dim)
 
 
     def forward(self, x):

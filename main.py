@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from vae import VAE
 from pathlib import Path
 from loss import vae_loss
+from tqdm.auto import tqdm
 import torch
 import yaml
 
@@ -30,8 +31,8 @@ def dataloading(config):
     TRAIN_SIZE = data_config["train_size"]
     VALIDATION_SIZE = data_config["validation_size"]
 
-    full_train_dataset = datasets.FashionMNIST(
-        root=data_config["root"],
+    datasets.FashionMNIST(
+        root=ROOT,
         train=True,
         transform=transformer,
         download=True,
@@ -59,6 +60,11 @@ def train(train_loader, validation_loader, nn_config):
     BETA_ONE = training_config["beta_one"]
     BETA_TWO = training_config["beta_two"]
     EPOCHS = training_config["epochs"]
+    WEIGHT_DECAY = float(training_config["weight_decay"])
+
+    # MODEL CONFIG
+    model_config = nn_config["model"]
+    LATENT_DIM = model_config["latent_dim"]
 
     # SCHEDULER CONFIG
     scheduler_config = nn_config["scheduler"]
@@ -69,13 +75,14 @@ def train(train_loader, validation_loader, nn_config):
     loss_config = nn_config["loss"]
     BETA = loss_config["beta"]
 
-    model = VAE().to(DEVICE)
+    model = VAE(input_dim=LATENT_DIM).to(DEVICE)
 
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, betas=(BETA_ONE, BETA_TWO))
+    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, betas=(BETA_ONE, BETA_TWO), weight_decay=WEIGHT_DECAY)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=STEP_SIZE, gamma=LR_DECAY)
 
     training_losses = []
     validation_losses = []
+    BATCH_SIZE = nn_config["data"]["batch_size"]
 
     for epoch in range(EPOCHS):
         model.train()
@@ -83,7 +90,15 @@ def train(train_loader, validation_loader, nn_config):
         total_reconstruction_loss = 0
         total_kld_loss = 0
 
-        for images, labels in train_loader:
+        progress_bar = tqdm(
+            train_loader,
+            desc=f"Epoch {epoch + 1}/{EPOCHS}",
+            unit="batch",
+            dynamic_ncols=True,
+        )
+        samples_seen = 0
+
+        for images, labels in progress_bar:
             images = images.to(DEVICE)
             optimizer.zero_grad()
             reconstruction_logits, mu, log_var = model(images)
@@ -93,21 +108,37 @@ def train(train_loader, validation_loader, nn_config):
             loss.backward()
             optimizer.step()
 
-            total_loss += loss.item() * images.size(0)
-            total_kld_loss += kl_loss.item() * images.size(0)
-            total_reconstruction_loss += reconstruction_loss.item() * images.size(0)
+            samples_seen += images.size(0)
+            total_loss += loss.item() * BATCH_SIZE
+            total_kld_loss += kl_loss.item() * BATCH_SIZE
+            total_reconstruction_loss += reconstruction_loss.item() * BATCH_SIZE
+
+            progress_bar.set_postfix(
+                loss=f"{total_loss / samples_seen:.3f}",
+                recon=f"{total_reconstruction_loss / samples_seen:.3f}",
+                kl=f"{total_kld_loss / samples_seen:.3f}",
+                lr=f"{optimizer.param_groups[0]['lr']:.2e}",
+            )
 
         training_losses.append((total_loss / len(train_loader), total_kld_loss / len(train_loader), total_reconstruction_loss / len(train_loader)))
-        validation_losses.append(validate(model, validation_loader, BETA))
+        validation_loss, validation_reconstruction, validation_kld = validate(model, validation_loader, BETA, BATCH_SIZE)
+        validation_losses.append((validation_loss, validation_reconstruction, validation_kld))
+
+        tqdm.write(
+            f"Epoch {epoch + 1}: \n"
+            f"validation loss = {validation_loss:.3f} \t"
+            f"validation reconstruction = {validation_reconstruction:.3f} \t"
+            f"validation kld = {validation_kld:.3f} \t"
+        )
 
         scheduler.step()
 
         torch.save(model, 'weights.pth')
 
-        return training_losses, validation_losses
+    return training_losses, validation_losses
 
 
-def validate(model, validation_loader, BETA):
+def validate(model, validation_loader, BETA, BATCH_SIZE):
     model.eval()
     total_loss = 0
     total_reconstruction_loss = 0
@@ -116,13 +147,12 @@ def validate(model, validation_loader, BETA):
     with torch.no_grad():
         for images, labels in validation_loader:
             images = images.to(DEVICE)
-            reconstruction_logits, mu, log_var = model(images)
+            reconstruction_logits, mu, log_var = model(images, sample=False)
 
-            loss, reconstruction_loss, kl_loss = vae_loss(reconstruction_logits, images, mu, log_var, beta=BETA)
-            batch_size = reconstruction_logits.size(0)
-            total_loss += reconstruction_loss.item() * batch_size
-            total_reconstruction_loss += reconstruction_loss.item() * batch_size
-            total_kld_loss += kl_loss.item() * batch_size
+            loss, reconstruction_loss, kl_loss = vae_loss(images, reconstruction_logits, mu, log_var, beta=BETA)
+            total_loss += loss.item() * BATCH_SIZE
+            total_reconstruction_loss += reconstruction_loss.item() * BATCH_SIZE
+            total_kld_loss += kl_loss.item() * BATCH_SIZE
 
     return (
         total_loss / len(validation_loader),
