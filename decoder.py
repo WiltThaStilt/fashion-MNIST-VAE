@@ -14,7 +14,8 @@ class Decoder(nn.Module):
         # Layers
         self.layers = nn.Sequential(
             nn.Linear(self.input_dim, 64 * 11 * 11),
-            nn.ConvTranspose2d(64, 32, 4, 2),
+            nn.Unflatten(1, (64, 11, 11)),
+            nn.ConvTranspose2d(64, 32, 4, 2, output_padding=1),
             nn.ConvTranspose2d(32, 1, 4)
         )
 

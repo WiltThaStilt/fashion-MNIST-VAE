@@ -11,12 +11,12 @@ class VAE(nn.Module):
         self.input_dim = input_dim
 
         self.encoder = Encoder(input_dim)
-        self.reparameterization = Reparameterization(input_dim),
+        self.reparameterization = Reparameterization(input_dim)
         self.decoder = Decoder(input_dim)
 
     def forward(self, x):
-        mu, logvar = self.encoder(x) # Grabs the mean and the log-variance
-        z = self.reparameterization(mu, logvar)
-        reconstruction = self.decoder(z)
+        mu, logvar = self.encoder.forward(x) # Grabs the mean and the log-variance
+        z = self.reparameterization.forward(mu, logvar)
+        reconstruction = self.decoder.forward(z)
 
         return reconstruction, mu, logvar

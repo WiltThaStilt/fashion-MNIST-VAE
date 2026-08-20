@@ -55,7 +55,7 @@ def train(train_loader, validation_loader, nn_config):
 
     # TRAINING CONFIG
     training_config = nn_config["training"]
-    LEARNING_RATE = training_config["learning_rate"]
+    LEARNING_RATE = float(training_config["learning_rate"])
     BETA_ONE = training_config["beta_one"]
     BETA_TWO = training_config["beta_two"]
     EPOCHS = training_config["epochs"]
@@ -70,6 +70,7 @@ def train(train_loader, validation_loader, nn_config):
     BETA = loss_config["beta"]
 
     model = VAE().to(DEVICE)
+
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, betas=(BETA_ONE, BETA_TWO))
     scheduler = lr_scheduler.StepLR(optimizer, step_size=STEP_SIZE, gamma=LR_DECAY)
 
@@ -83,11 +84,11 @@ def train(train_loader, validation_loader, nn_config):
         total_kld_loss = 0
 
         for images, labels in train_loader:
-            images.to(DEVICE)
+            images = images.to(DEVICE)
             optimizer.zero_grad()
             reconstruction_logits, mu, log_var = model(images)
 
-            loss, reconstruction_loss, kl_loss = vae_loss(reconstruction_logits, images, mu, log_var, beta=BETA)
+            loss, reconstruction_loss, kl_loss = vae_loss(images, reconstruction_logits, mu, log_var, beta=BETA)
 
             loss.backward()
             optimizer.step()
@@ -97,10 +98,11 @@ def train(train_loader, validation_loader, nn_config):
             total_reconstruction_loss += reconstruction_loss.item() * images.size(0)
 
         training_losses.append((total_loss / len(train_loader), total_kld_loss / len(train_loader), total_reconstruction_loss / len(train_loader)))
-        validation_loss, validation_reconstruction_loss, validation_kld_loss = vae_loss(validation_loader, model, nn_config)
-        validation_losses.append((validation_loss, validation_reconstruction_loss, validation_kld_loss))
+        validation_losses.append(validate(model, validation_loader, BETA))
 
-        scheduler.step(validation_loss)
+        scheduler.step()
+
+        torch.save(model, 'weights.pth')
 
         return training_losses, validation_losses
 
@@ -113,7 +115,7 @@ def validate(model, validation_loader, BETA):
 
     with torch.no_grad():
         for images, labels in validation_loader:
-            images.to(DEVICE)
+            images = images.to(DEVICE)
             reconstruction_logits, mu, log_var = model(images)
 
             loss, reconstruction_loss, kl_loss = vae_loss(reconstruction_logits, images, mu, log_var, beta=BETA)
@@ -133,3 +135,5 @@ if __name__ == "__main__":
     nn_config = load_config()
     train_set, val_set, test_set = dataloading(nn_config)
     training_loss, validation_loss = train(train_set, val_set, nn_config)
+    print(training_loss[-1])
+    print(validation_loss[-1])
