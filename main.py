@@ -8,6 +8,7 @@ from loss import vae_loss
 from tqdm.auto import tqdm
 import torch
 import yaml
+import pandas as pd
 
 
 DEVICE ='cuda' if torch.cuda.is_available() else 'cpu'
@@ -82,7 +83,6 @@ def train(train_loader, validation_loader, nn_config):
 
     training_losses = []
     validation_losses = []
-    BATCH_SIZE = nn_config["data"]["batch_size"]
 
     for epoch in range(EPOCHS):
         model.train()
@@ -95,6 +95,7 @@ def train(train_loader, validation_loader, nn_config):
             desc=f"Epoch {epoch + 1}/{EPOCHS}",
             unit="batch",
             dynamic_ncols=True,
+            colour="white"
         )
         samples_seen = 0
 
@@ -109,9 +110,9 @@ def train(train_loader, validation_loader, nn_config):
             optimizer.step()
 
             samples_seen += images.size(0)
-            total_loss += loss.item() * BATCH_SIZE
-            total_kld_loss += kl_loss.item() * BATCH_SIZE
-            total_reconstruction_loss += reconstruction_loss.item() * BATCH_SIZE
+            total_loss += loss.item()
+            total_kld_loss += kl_loss.item()
+            total_reconstruction_loss += reconstruction_loss.item()
 
             progress_bar.set_postfix(
                 loss=f"{total_loss / samples_seen:.3f}",
@@ -120,8 +121,8 @@ def train(train_loader, validation_loader, nn_config):
                 lr=f"{optimizer.param_groups[0]['lr']:.2e}",
             )
 
-        training_losses.append((total_loss / len(train_loader), total_kld_loss / len(train_loader), total_reconstruction_loss / len(train_loader)))
-        validation_loss, validation_reconstruction, validation_kld = validate(model, validation_loader, BETA, BATCH_SIZE)
+        training_losses.append((total_loss / samples_seen, total_kld_loss / samples_seen, total_reconstruction_loss / samples_seen))
+        validation_loss, validation_reconstruction, validation_kld = validate(model, validation_loader, BETA)
         validation_losses.append((validation_loss, validation_reconstruction, validation_kld))
 
         tqdm.write(
@@ -138,11 +139,12 @@ def train(train_loader, validation_loader, nn_config):
     return training_losses, validation_losses
 
 
-def validate(model, validation_loader, BETA, BATCH_SIZE):
+def validate(model, validation_loader, BETA):
     model.eval()
     total_loss = 0
     total_reconstruction_loss = 0
     total_kld_loss = 0
+    samples_seen = 0
 
     with torch.no_grad():
         for images, labels in validation_loader:
@@ -150,20 +152,45 @@ def validate(model, validation_loader, BETA, BATCH_SIZE):
             reconstruction_logits, mu, log_var = model(images, sample=False)
 
             loss, reconstruction_loss, kl_loss = vae_loss(images, reconstruction_logits, mu, log_var, beta=BETA)
-            total_loss += loss.item() * BATCH_SIZE
-            total_reconstruction_loss += reconstruction_loss.item() * BATCH_SIZE
-            total_kld_loss += kl_loss.item() * BATCH_SIZE
+            total_loss += loss.item()
+            total_reconstruction_loss += reconstruction_loss.item()
+            total_kld_loss += kl_loss.item()
+            samples_seen += images.size(0)
 
     return (
-        total_loss / len(validation_loader),
-        total_reconstruction_loss / len(validation_loader),
-        total_kld_loss / len(validation_loader),
+        total_loss / samples_seen,
+        total_reconstruction_loss / samples_seen,
+        total_kld_loss / samples_seen
     )
+
+
+def save_data(train_losses, validation_losses):
+    to_save_df = {
+        "training_losses": [],
+        "training_reconstruction_losses": [],
+        "training_kld_losses": [],
+        "validation_losses": [],
+        "validation_reconstruction_losses": [],
+        "validation_kld_losses": [],
+    }
+
+    for train_loss, validation_loss in zip(train_losses, validation_losses):
+        total_loss, reconstruction_loss, kl_loss = train_loss
+        val_total_loss, val_reconstruction_loss, val_kl_loss = validation_loss
+        to_save_df["training_losses"].append(total_loss)
+        to_save_df["training_reconstruction_losses"].append(reconstruction_loss)
+        to_save_df["training_kld_losses"].append(kl_loss)
+        to_save_df["validation_losses"].append(val_total_loss)
+        to_save_df["validation_reconstruction_losses"].append(val_reconstruction_loss)
+        to_save_df["validation_kld_losses"].append(val_kl_loss)
+
+    pd.DataFrame(to_save_df).to_csv("results.csv",sep=";", index=False)
 
 
 if __name__ == "__main__":
     nn_config = load_config()
     train_set, val_set, test_set = dataloading(nn_config)
     training_loss, validation_loss = train(train_set, val_set, nn_config)
-    print(training_loss[-1])
-    print(validation_loss[-1])
+    # (training_loss, validation_loss)
+    print(training_loss, validation_loss)
+    save_data(training_loss, validation_loss)
