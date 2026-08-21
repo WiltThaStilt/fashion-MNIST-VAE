@@ -194,3 +194,4 @@ if __name__ == "__main__":
     # (training_loss, validation_loss)
     print(training_loss, validation_loss)
     save_data(training_loss, validation_loss)
+
